@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environments
+venv/
+build-env/
+.venv/
+
+# PyInstaller build output
+build/
+dist/
+*.manifest
+
+# Local test database (the real app stores data in the user's AppData folder)
+*.db
