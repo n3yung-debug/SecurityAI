@@ -1,13 +1,15 @@
 name: Build Windows App
 
 # Builds the downloadable Windows program automatically.
-# - Runs on every push to the development branch and on demand.
+# - Runs on pushes to main / the dev branch, on version tags, and on demand.
 # - The finished .exe is attached to the run as a downloadable artifact.
-# - Pushing a version tag (e.g. v1.0.0) also publishes a GitHub Release.
+# - On main, on a version tag, or when run manually, it also publishes a
+#   GitHub Release so the .exe is downloadable from the repo's home page.
 
 on:
   push:
     branches:
+      - main
       - claude/affectionate-bell-ou99cm
     tags:
       - "v*"
@@ -45,8 +47,17 @@ jobs:
           path: dist/OperationsAssistant.exe
           if-no-files-found: error
 
-      - name: Publish a Release (only when a version tag is pushed)
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Publish a Release (downloadable from the repo home page)
+        if: >-
+          github.ref == 'refs/heads/main'
+          || startsWith(github.ref, 'refs/tags/v')
+          || github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
+          # On a version tag use that tag; otherwise publish/refresh v1.0.0.
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v1.0.0' }}
+          name: Operations Assistant ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v1.0.0' }}
+          body: |
+            Download **OperationsAssistant.exe** below (under *Assets*) and run it on the host PC.
+            See the README for setup. Windows SmartScreen may warn about an unknown publisher — choose **More info → Run anyway**.
           files: dist/OperationsAssistant.exe
