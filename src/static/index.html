@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Operations Assistant</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">◆</span>
+      <div>
+        <h1>Operations Assistant</h1>
+        <p class="tagline">Offline answers from your own knowledge base</p>
+      </div>
+    </div>
+    <nav class="tabs">
+      <button class="tab active" data-tab="ask">Ask a Question</button>
+      <button class="tab" data-tab="manage">Manage Knowledge</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- ASK TAB ------------------------------------------------------ -->
+    <section id="ask" class="panel active">
+      <div class="ask-box">
+        <input id="question" type="text"
+               placeholder="e.g. How do I reset the alarm panel after a power outage?"
+               autocomplete="off" />
+        <button id="askBtn">Ask</button>
+      </div>
+      <div id="answer" class="answer hidden"></div>
+      <div id="emptyHint" class="hint">
+        Type a question above and press <strong>Ask</strong>. The assistant
+        searches everything you've taught it and shows the best match.
+      </div>
+    </section>
+
+    <!-- MANAGE TAB --------------------------------------------------- -->
+    <section id="manage" class="panel">
+      <div class="manage-grid">
+        <!-- Q&A pairs -->
+        <div class="card">
+          <h2>Q&amp;A Pairs</h2>
+          <p class="card-sub">Type a question and the exact answer you want returned.</p>
+          <input id="qaQuestion" type="text" placeholder="Question" />
+          <textarea id="qaAnswer" rows="3" placeholder="Answer"></textarea>
+          <button id="addQaBtn">Add Q&amp;A</button>
+          <div id="qaList" class="list"></div>
+        </div>
+
+        <!-- Documents -->
+        <div class="card">
+          <h2>Documents</h2>
+          <p class="card-sub">
+            Upload manuals, spec sheets, or procedures (PDF, Word, Excel, TXT, CSV).
+          </p>
+          <label class="filedrop" id="fileLabel">
+            <input id="fileInput" type="file"
+                   accept=".pdf,.docx,.xlsx,.txt,.md,.csv" hidden />
+            <span>Click to choose a file to upload</span>
+          </label>
+          <div id="uploadStatus" class="upload-status"></div>
+          <div id="docList" class="list"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
