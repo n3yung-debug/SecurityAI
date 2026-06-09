@@ -52,7 +52,8 @@ jobs:
           Copy-Item setup-ai.bat                 bundle/
           Copy-Item allow-firewall.bat           bundle/
           Copy-Item HOST-SETUP.txt               bundle/
-          Copy-Item README.md                    bundle/
+          # Ship the docs as .txt so they open in Notepad with a double-click.
+          Copy-Item README.md                    bundle/README.txt
           Compress-Archive -Path bundle/* -DestinationPath dist/OperationsAssistant-Setup.zip -Force
 
       - name: Upload the program as a downloadable artifact

@@ -9,7 +9,7 @@ What's in this folder:
   - OperationsAssistant.exe ... the program itself
   - setup-ai.bat ............. installs the free local-AI models (one time)
   - allow-firewall.bat ....... lets other PCs on the network connect (one time)
-  - README.md ................ full documentation
+  - README.txt ............... full documentation
   - HOST-SETUP.txt ........... this file
 
 ----------------------------------------------------------
