@@ -1,0 +1,50 @@
+==========================================================
+  OPERATIONS ASSISTANT - HOST SETUP (read this first)
+==========================================================
+
+This folder contains everything needed to set up the program on the HOST PC
+(the one always-on computer that everyone else will connect to).
+
+What's in this folder:
+  - OperationsAssistant.exe ... the program itself
+  - setup-ai.bat ............. installs the free local-AI models (one time)
+  - allow-firewall.bat ....... lets other PCs on the network connect (one time)
+  - README.md ................ full documentation
+  - HOST-SETUP.txt ........... this file
+
+----------------------------------------------------------
+  ONE-TIME SETUP ON THE HOST PC
+----------------------------------------------------------
+
+1) (Recommended) Turn on the free local AI for smart, conversational answers:
+     a. Install Ollama (free) from:  https://ollama.com/download
+        -- This is the only piece you must download separately.
+     b. Double-click  setup-ai.bat  and let it finish (it downloads the AI
+        models once; this can take several minutes and a few GB).
+
+   You can skip step 1 -- the program still works using plain search, just
+   without the conversational answers.
+
+2) Allow other computers to connect:
+     Right-click  allow-firewall.bat  and choose "Run as administrator".
+
+3) Start the program:
+     Double-click  OperationsAssistant.exe
+     A window opens showing two web addresses:
+       - the SHARE address to give everyone else (e.g. http://192.168.1.20:8731)
+       - the MANAGE address for this host PC      (http://localhost:8731)
+     KEEP THIS WINDOW OPEN -- closing it stops the program for everyone.
+
+4) Add your knowledge (on the host only):
+     Use the "Manage Knowledge" tab to type Q&A pairs and upload documents
+     (PDF, Word, Excel, text, CSV).
+
+----------------------------------------------------------
+  FOR EVERYONE ELSE
+----------------------------------------------------------
+
+They just open the SHARE address in their web browser and ask questions.
+No installation needed. Editing is only possible on the host PC.
+
+Note: The first time you run the .exe, Windows may warn about an
+"unknown publisher". Click "More info" then "Run anyway".
