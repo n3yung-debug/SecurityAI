@@ -3,8 +3,10 @@ name: Build Windows App
 # Builds the downloadable Windows program automatically.
 # - Runs on pushes to main / the dev branch, on version tags, and on demand.
 # - The finished .exe is attached to the run as a downloadable artifact.
-# - On main, on a version tag, or when run manually, it also publishes a
-#   GitHub Release so the .exe is downloadable from the repo's home page.
+# - Releases are versioned. The version is read from the VERSION file; a new
+#   GitHub Release (v<VERSION>) is published only when that version doesn't
+#   already exist, so every released version is preserved on the home page.
+#   Pushing a git tag like v1.2.0 also publishes that exact version.
 
 on:
   push:
@@ -25,6 +27,8 @@ jobs:
     steps:
       - name: Check out the code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # need full history + tags to detect existing versions
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -47,17 +51,39 @@ jobs:
           path: dist/OperationsAssistant.exe
           if-no-files-found: error
 
-      - name: Publish a Release (downloadable from the repo home page)
+      # ---- Versioned releases ----------------------------------------
+      - name: Work out the version
+        id: ver
+        if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          version="$(tr -d '[:space:]' < VERSION)"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          git fetch --tags --quiet || true
+          if git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
+            echo "exists=true"  >> "$GITHUB_OUTPUT"
+            echo "::notice::Release v$version already exists; skipping publish."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Publishing new release v$version."
+          fi
+
+      - name: Publish new version (from VERSION file)
         if: >-
-          github.ref == 'refs/heads/main'
-          || startsWith(github.ref, 'refs/tags/v')
-          || github.event_name == 'workflow_dispatch'
+          (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch')
+          && steps.ver.outputs.exists == 'false'
         uses: softprops/action-gh-release@v2
         with:
-          # On a version tag use that tag; otherwise publish/refresh v1.0.0.
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v1.0.0' }}
-          name: Operations Assistant ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v1.0.0' }}
-          body: |
-            Download **OperationsAssistant.exe** below (under *Assets*) and run it on the host PC.
-            See the README for setup. Windows SmartScreen may warn about an unknown publisher — choose **More info → Run anyway**.
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: Operations Assistant ${{ steps.ver.outputs.tag }}
+          generate_release_notes: true
+          files: dist/OperationsAssistant.exe
+
+      - name: Publish tagged version (from a pushed git tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Operations Assistant ${{ github.ref_name }}
+          generate_release_notes: true
           files: dist/OperationsAssistant.exe

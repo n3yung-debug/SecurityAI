@@ -67,15 +67,23 @@ the host.
 ## Downloading the program
 
 - **Easiest — from the repo's main page:** look at the **Releases** panel on
-  the right-hand side of the repository home page, click the latest release, and
-  download **`OperationsAssistant.exe`** under *Assets*. (Releases are published
-  automatically whenever a version tag like `v1.0.0` is pushed.)
+  the right-hand side of the repository home page, click the version you want,
+  and download **`OperationsAssistant.exe`** under *Assets*.
 - **Newest build (in between releases):** repository **Actions** tab → newest
   *Build Windows App* run → download the **OperationsAssistant-windows**
   artifact → unzip to get `OperationsAssistant.exe`.
 
 (First run, Windows SmartScreen may warn about an "unknown publisher" because
 the app isn't code-signed. Click **More info → Run anyway**.)
+
+### Versions
+
+Each release is numbered (`v1.0.0`, `v1.1.0`, …) and kept permanently, so you
+can download any past version and see exactly what changed. The current version
+is in [`VERSION`](VERSION); release-by-release notes are in
+[`CHANGELOG.md`](CHANGELOG.md). To publish a new version, bump `VERSION`, add a
+changelog entry, and merge to `main` — the build creates the new release
+automatically.
 
 ---
 
