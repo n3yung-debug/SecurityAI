@@ -20,6 +20,14 @@ and merge to `main`.
 
 ---
 
+## v1.0.1 — Complete host setup bundle in the release
+
+- Releases now include **`OperationsAssistant-Setup.zip`**, containing
+  everything the host needs in one download: the program, `setup-ai.bat`,
+  `allow-firewall.bat`, a plain-text `HOST-SETUP.txt` guide, and the README.
+  (Ollama is still installed separately — it's the only external piece.)
+- The standalone `OperationsAssistant.exe` is still attached for convenience.
+
 ## v1.0.0 — Initial release
 
 First version of Operations Assistant.

@@ -44,11 +44,24 @@ jobs:
       - name: Build the executable
         run: pyinstaller --noconfirm --clean OperationsAssistant.spec
 
+      - name: Assemble host setup bundle
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path bundle | Out-Null
+          Copy-Item dist/OperationsAssistant.exe bundle/
+          Copy-Item setup-ai.bat                 bundle/
+          Copy-Item allow-firewall.bat           bundle/
+          Copy-Item HOST-SETUP.txt               bundle/
+          Copy-Item README.md                    bundle/
+          Compress-Archive -Path bundle/* -DestinationPath dist/OperationsAssistant-Setup.zip -Force
+
       - name: Upload the program as a downloadable artifact
         uses: actions/upload-artifact@v4
         with:
           name: OperationsAssistant-windows
-          path: dist/OperationsAssistant.exe
+          path: |
+            dist/OperationsAssistant.exe
+            dist/OperationsAssistant-Setup.zip
           if-no-files-found: error
 
       # ---- Versioned releases ----------------------------------------
@@ -77,7 +90,9 @@ jobs:
           tag_name: ${{ steps.ver.outputs.tag }}
           name: Operations Assistant ${{ steps.ver.outputs.tag }}
           generate_release_notes: true
-          files: dist/OperationsAssistant.exe
+          files: |
+            dist/OperationsAssistant-Setup.zip
+            dist/OperationsAssistant.exe
 
       - name: Publish tagged version (from a pushed git tag)
         if: startsWith(github.ref, 'refs/tags/v')
@@ -86,4 +101,6 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: Operations Assistant ${{ github.ref_name }}
           generate_release_notes: true
-          files: dist/OperationsAssistant.exe
+          files: |
+            dist/OperationsAssistant-Setup.zip
+            dist/OperationsAssistant.exe
