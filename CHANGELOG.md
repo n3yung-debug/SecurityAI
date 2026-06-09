@@ -20,6 +20,11 @@ and merge to `main`.
 
 ---
 
+## v1.0.2 — Easier-to-open docs in the bundle
+
+- The documentation in the setup bundle now ships as **`README.txt`** (instead
+  of `README.md`) so it opens directly in Notepad with a double-click.
+
 ## v1.0.1 — Complete host setup bundle in the release
 
 - Releases now include **`OperationsAssistant-Setup.zip`**, containing
