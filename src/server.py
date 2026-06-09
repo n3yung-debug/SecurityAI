@@ -1,18 +1,24 @@
-"""Flask web server that powers the Operations Assistant window.
+"""Flask web server that powers the Operations Assistant.
 
-The program runs a tiny web server on the local machine (localhost) and opens
-it in the browser. Nothing is exposed to the internet -- it only listens on the
-local computer.
+Runs on the HOST PC and is reachable by everyone on the local network at
+http://<host>:8731. There is a single shared knowledge base.
+
+Access rules:
+  * Anyone on the network can ASK questions.
+  * Adding / editing / deleting knowledge is allowed only from the host machine
+    itself (i.e. requests coming from localhost). This enforces "managed on the
+    host" without needing passwords. Remote users get an ask-only interface.
 """
 
 from __future__ import annotations
 
+import functools
 import os
 import sys
 
 from flask import Flask, jsonify, request, send_from_directory
 
-from . import ingest, storage
+from . import ai, ingest, storage
 from .retriever import engine
 
 
@@ -25,6 +31,33 @@ def resource_path(relative: str) -> str:
 STATIC_DIR = resource_path("static")
 
 app = Flask(__name__, static_folder=None)
+
+# Loopback addresses count as "the host machine".
+_LOOPBACK = {"127.0.0.1", "::1", "::ffff:127.0.0.1", "localhost"}
+
+
+def is_host_request() -> bool:
+    return (request.remote_addr or "") in _LOOPBACK
+
+
+def host_only(view):
+    """Reject knowledge-changing requests that don't come from the host."""
+
+    @functools.wraps(view)
+    def wrapper(*args, **kwargs):
+        if not is_host_request():
+            return (
+                jsonify(
+                    {
+                        "error": "Knowledge can only be changed on the host PC. "
+                        "Please ask whoever manages the Assistant."
+                    }
+                ),
+                403,
+            )
+        return view(*args, **kwargs)
+
+    return wrapper
 
 
 # --------------------------------------------------------------------------
@@ -40,18 +73,111 @@ def static_files(filename):
     return send_from_directory(STATIC_DIR, filename)
 
 
+@app.get("/api/whoami")
+def whoami():
+    """Tell the UI whether this user may edit, and what the AI can do."""
+    ai_status = ai.status()
+    return jsonify(
+        {
+            "is_host": is_host_request(),
+            "ai": {
+                "generation": ai_status.get("chat_ready", False),
+                "embeddings": ai_status.get("embed_ready", False),
+                "reachable": ai_status.get("reachable", False),
+                "chat_model": ai_status.get("chat_model"),
+            },
+            "search_mode": engine.mode,
+        }
+    )
+
+
 # --------------------------------------------------------------------------
-# Ask a question
+# Ask a question  (retrieval + optional local-AI generation)
 # --------------------------------------------------------------------------
 @app.post("/api/ask")
 def ask():
     payload = request.get_json(silent=True) or {}
-    question = payload.get("question", "")
-    return jsonify(engine.ask(question))
+    question = (payload.get("question") or "").strip()
+
+    if not question:
+        return jsonify({"found": False, "message": "Please type a question."})
+
+    search = engine.search(question, top_k=4)
+    if not search["has_items"]:
+        return jsonify(
+            {
+                "found": False,
+                "message": (
+                    "I don't have any knowledge yet. On the host PC, add Q&A "
+                    "pairs or upload documents on the 'Manage Knowledge' tab."
+                ),
+            }
+        )
+
+    candidates = search["candidates"]
+    best = candidates[0]["confidence"] if candidates else 0.0
+
+    # Nothing remotely relevant -> say so rather than guess.
+    if not candidates or best < engine.floor():
+        return jsonify(
+            {
+                "found": False,
+                "message": (
+                    "I couldn't find anything relevant for that. Try rephrasing, "
+                    "or have someone add it on the host PC."
+                ),
+                "suggestions": candidates[:3],
+            }
+        )
+
+    # Try a conversational, grounded answer from the local AI.
+    if ai.generation_available():
+        contexts = [c["answer"][:1500] for c in candidates]
+        generated = ai.generate(question, contexts)
+        if generated:
+            return jsonify(
+                {
+                    "found": True,
+                    "answer": generated,
+                    "mode": "ai",
+                    "sources": [
+                        {"source": c["source"], "kind": c["kind"]}
+                        for c in candidates
+                    ],
+                    "confidence": best,
+                }
+            )
+
+    # Fallback: AI off or failed -> return the best matching passage directly,
+    # but only if we're confident enough for a raw passage to be useful.
+    if best < engine.no_ai_threshold():
+        return jsonify(
+            {
+                "found": False,
+                "message": (
+                    "I couldn't find a confident answer for that. Try rephrasing, "
+                    "or have someone add it on the host PC."
+                ),
+                "suggestions": candidates[:3],
+            }
+        )
+
+    top = candidates[0]
+    return jsonify(
+        {
+            "found": True,
+            "answer": top["answer"],
+            "mode": "search",
+            "source": top["source"],
+            "kind": top["kind"],
+            "confidence": top["confidence"],
+            "alternatives": candidates[1:],
+        }
+    )
 
 
 # --------------------------------------------------------------------------
-# Q&A pairs
+# Q&A pairs  (host-only for changes)
 # --------------------------------------------------------------------------
 @app.get("/api/qa")
 def get_qa():
@@ -59,6 +185,7 @@ def get_qa():
 
 
 @app.post("/api/qa")
+@host_only
 def create_qa():
     payload = request.get_json(silent=True) or {}
     question = (payload.get("question") or "").strip()
@@ -71,6 +198,7 @@ def create_qa():
 
 
 @app.put("/api/qa/<int:qa_id>")
+@host_only
 def edit_qa(qa_id):
     payload = request.get_json(silent=True) or {}
     question = (payload.get("question") or "").strip()
@@ -83,6 +211,7 @@ def edit_qa(qa_id):
 
 
 @app.delete("/api/qa/<int:qa_id>")
+@host_only
 def remove_qa(qa_id):
     storage.delete_qa(qa_id)
     engine.mark_dirty()
@@ -90,7 +219,7 @@ def remove_qa(qa_id):
 
 
 # --------------------------------------------------------------------------
-# Documents
+# Documents  (host-only for changes)
 # --------------------------------------------------------------------------
 @app.get("/api/documents")
 def get_documents():
@@ -98,6 +227,7 @@ def get_documents():
 
 
 @app.post("/api/documents")
+@host_only
 def upload_document():
     if "file" not in request.files:
         return jsonify({"error": "No file was uploaded."}), 400
@@ -122,12 +252,16 @@ def upload_document():
 
 
 @app.delete("/api/documents/<int:doc_id>")
+@host_only
 def remove_document(doc_id):
     storage.delete_document(doc_id)
     engine.mark_dirty()
     return jsonify({"ok": True})
 
 
+# --------------------------------------------------------------------------
+# First-run example data
+# --------------------------------------------------------------------------
 EXAMPLE_QA = [
     (
         "How do I reset the alarm panel after a power outage?",
@@ -153,8 +287,6 @@ EXAMPLE_QA = [
 
 
 def _seed_examples_if_empty() -> None:
-    """On a brand-new install, add a few example Q&A pairs so the user sees
-    how the app works. These are clearly marked and can be deleted."""
     if not storage.list_qa() and not storage.list_documents():
         for question, answer in EXAMPLE_QA:
             storage.add_qa(question, answer)

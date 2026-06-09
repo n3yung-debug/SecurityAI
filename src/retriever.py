@@ -1,17 +1,20 @@
-"""The offline question-answering engine.
+"""The offline search engine that finds the most relevant knowledge.
 
-How it works (in plain terms): every piece of knowledge you give the app -- a
-Q&A pair or a passage from an uploaded document -- is turned into a numerical
-"fingerprint" of the words it contains. When someone asks a question, we make a
-fingerprint of the question and find the stored knowledge whose fingerprint is
-most similar. We also do a fuzzy text comparison to catch wording differences.
+It runs in one of two modes, chosen automatically:
 
-This all runs on the local CPU using standard math libraries, so it is fast,
-private, and completely free to operate.
+  * "embeddings" -- if the local AI (Ollama) has an embedding model available,
+    we compare the *meaning* of the question to stored knowledge. Best quality.
+  * "tfidf"      -- otherwise we fall back to keyword/term-frequency matching
+    plus fuzzy text comparison. Always works, needs nothing extra.
+
+Either way it returns ranked candidate passages. The server then either hands
+those passages to the local AI to write a conversational answer, or (if AI is
+off) returns the best passage directly.
 """
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 
 import numpy as np
@@ -19,51 +22,61 @@ from rapidfuzz import fuzz
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import linear_kernel
 
-from . import storage
+from . import ai, storage
 
 
-# Below this combined score we treat the match as "not confident enough" and
-# tell the user we don't have a good answer rather than guessing.
-CONFIDENCE_THRESHOLD = 0.18
+# Minimum score to consider a passage relevant at all (mode-specific).
+FLOOR = {"tfidf": 0.05, "embeddings": 0.25}
+
+# When the AI is OFF we must be stricter, since we return the raw passage.
+NO_AI_THRESHOLD = {"tfidf": 0.18, "embeddings": 0.45}
 
 
 @dataclass
 class Item:
-    """One searchable unit of knowledge."""
-
     kind: str          # "qa" or "document"
     match_text: str    # text we compare the question against
-    answer: str        # what we show the user
+    answer: str        # the passage we show / feed to the AI
     source: str        # human-readable origin label
+
+
+def _hash(text: str) -> str:
+    return hashlib.sha1(text.encode("utf-8")).hexdigest()
 
 
 class Engine:
     def __init__(self) -> None:
         self._items: list[Item] = []
+        self._mode = "tfidf"
+        self._dirty = True
+
+        # tfidf mode
         self._vectorizer: TfidfVectorizer | None = None
         self._matrix = None
-        self._dirty = True
+
+        # embeddings mode
+        self._embeddings: np.ndarray | None = None
+        self._embed_cache: dict[str, list[float]] = {}
+
+    @property
+    def mode(self) -> str:
+        return self._mode
 
     def mark_dirty(self) -> None:
-        """Call after knowledge changes so the index rebuilds on next ask."""
         self._dirty = True
 
+    # ------------------------------------------------------------------
     def _load_items(self) -> list[Item]:
         items: list[Item] = []
-
         for qa in storage.list_qa():
-            # Match mostly on the question, but include the answer so related
-            # wording still scores.
-            match_text = f"{qa['question']} {qa['question']} {qa['answer']}"
             items.append(
                 Item(
                     kind="qa",
-                    match_text=match_text,
+                    match_text=f"{qa['question']} {qa['question']} {qa['answer']}",
                     answer=qa["answer"],
                     source="Saved Q&A",
                 )
             )
-
         for chunk in storage.all_chunks():
             items.append(
                 Item(
@@ -73,95 +86,126 @@ class Engine:
                     source=f"Document: {chunk['filename']}",
                 )
             )
-
         return items
 
     def _rebuild(self) -> None:
         self._items = self._load_items()
+        self._vectorizer = None
+        self._matrix = None
+        self._embeddings = None
+
         if not self._items:
-            self._vectorizer = None
-            self._matrix = None
+            self._mode = "embeddings" if ai.embeddings_available() else "tfidf"
+            self._dirty = False
+            return
+
+        if ai.embeddings_available() and self._build_embeddings():
+            self._mode = "embeddings"
         else:
-            self._vectorizer = TfidfVectorizer(
-                stop_words="english",
-                ngram_range=(1, 2),
-                sublinear_tf=True,
-            )
-            self._matrix = self._vectorizer.fit_transform(
-                [it.match_text for it in self._items]
-            )
+            self._build_tfidf()
+            self._mode = "tfidf"
+
         self._dirty = False
 
-    def ask(self, question: str, top_k: int = 3) -> dict:
-        if self._dirty:
-            self._rebuild()
+    def _build_tfidf(self) -> None:
+        self._vectorizer = TfidfVectorizer(
+            stop_words="english", ngram_range=(1, 2), sublinear_tf=True
+        )
+        self._matrix = self._vectorizer.fit_transform(
+            [it.match_text for it in self._items]
+        )
 
-        question = (question or "").strip()
-        if not question:
-            return {"found": False, "message": "Please type a question."}
+    def _build_embeddings(self) -> bool:
+        """Embed any not-yet-cached items, then assemble the matrix.
 
-        if not self._items:
-            return {
-                "found": False,
-                "message": (
-                    "I don't have any knowledge yet. Add some Q&A pairs or "
-                    "upload documents on the 'Manage Knowledge' tab first."
-                ),
-            }
+        Returns False if embedding fails, so we can fall back to tf-idf.
+        """
+        texts = [it.match_text[:2000] for it in self._items]
+        missing = [t for t in texts if _hash(t) not in self._embed_cache]
+        if missing:
+            vectors = ai.embed(missing)
+            if vectors is None:
+                return False
+            for text, vec in zip(missing, vectors):
+                self._embed_cache[_hash(text)] = vec
 
-        # Cosine similarity via TF-IDF.
-        q_vec = self._vectorizer.transform([question])
-        cosine = linear_kernel(q_vec, self._matrix).flatten()
+        try:
+            matrix = np.array([self._embed_cache[_hash(t)] for t in texts], dtype=float)
+        except KeyError:
+            return False
 
-        # Fuzzy string score (0..1) gives a boost when wording is close,
-        # which helps short Q&A questions in particular.
+        # Normalize for cosine similarity via dot product.
+        norms = np.linalg.norm(matrix, axis=1, keepdims=True)
+        norms[norms == 0] = 1.0
+        self._embeddings = matrix / norms
+        return True
+
+    # ------------------------------------------------------------------
+    def _scores(self, question: str) -> np.ndarray | None:
+        if self._mode == "embeddings" and self._embeddings is not None:
+            qv = ai.embed([question])
+            if not qv:
+                return None
+            q = np.array(qv[0], dtype=float)
+            n = np.linalg.norm(q) or 1.0
+            cosine = self._embeddings @ (q / n)
+        else:
+            if self._vectorizer is None:
+                return None
+            q_vec = self._vectorizer.transform([question])
+            cosine = linear_kernel(q_vec, self._matrix).flatten()
+
         fuzzy = np.array(
             [
                 fuzz.token_set_ratio(question, it.match_text[:400]) / 100.0
                 for it in self._items
             ]
         )
+        return 0.75 * cosine + 0.25 * fuzzy
 
-        combined = 0.7 * cosine + 0.3 * fuzzy
+    def search(self, question: str, top_k: int = 4) -> dict:
+        """Return ranked candidate passages for a question."""
+        if self._dirty:
+            self._rebuild()
 
-        order = np.argsort(combined)[::-1]
-        best_idx = int(order[0])
-        best_score = float(combined[best_idx])
+        question = (question or "").strip()
+        result = {"mode": self._mode, "has_items": bool(self._items), "candidates": []}
+        if not question or not self._items:
+            return result
 
-        results = []
+        scores = self._scores(question)
+        if scores is None:
+            # Embedding the query failed; rebuild as tf-idf and retry once.
+            self._mode = "tfidf"
+            self._build_tfidf()
+            scores = self._scores(question)
+            result["mode"] = self._mode
+            if scores is None:
+                return result
+
+        order = np.argsort(scores)[::-1]
+        candidates = []
         for idx in order[:top_k]:
             idx = int(idx)
-            if combined[idx] <= 0:
+            if scores[idx] <= 0:
                 continue
-            results.append(
+            candidates.append(
                 {
                     "answer": self._items[idx].answer,
                     "source": self._items[idx].source,
                     "kind": self._items[idx].kind,
-                    "confidence": round(float(combined[idx]), 3),
+                    "confidence": round(float(scores[idx]), 3),
                 }
             )
+        result["candidates"] = candidates
+        return result
 
-        if best_score < CONFIDENCE_THRESHOLD or not results:
-            return {
-                "found": False,
-                "message": (
-                    "I couldn't find a confident answer for that. Try "
-                    "rephrasing, or add it on the 'Manage Knowledge' tab."
-                ),
-                "suggestions": results,
-            }
+    # Thresholds for the current mode -------------------------------------
+    def floor(self) -> float:
+        return FLOOR.get(self._mode, 0.05)
 
-        top = results[0]
-        return {
-            "found": True,
-            "answer": top["answer"],
-            "source": top["source"],
-            "kind": top["kind"],
-            "confidence": top["confidence"],
-            "alternatives": results[1:],
-        }
+    def no_ai_threshold(self) -> float:
+        return NO_AI_THRESHOLD.get(self._mode, 0.18)
 
 
-# A single shared engine instance for the whole app.
 engine = Engine()

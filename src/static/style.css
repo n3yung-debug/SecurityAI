@@ -28,6 +28,18 @@ body {
   padding: 18px 28px 0;
 }
 .brand { display: flex; align-items: center; gap: 14px; }
+.ai-status {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #e2e8f0;
+  white-space: nowrap;
+}
+.ai-status.on  { background: rgba(22, 163, 74, .25); color: #bbf7d0; }
+.ai-status.off { background: rgba(255, 255, 255, .12); color: #cbd5e1; }
 .logo {
   font-size: 28px;
   background: rgba(255, 255, 255, 0.12);
@@ -109,6 +121,7 @@ main { max-width: 980px; margin: 0 auto; padding: 28px; }
 .badge.high { background: #dcfce7; color: var(--ok); }
 .badge.med  { background: #fef3c7; color: var(--warn); }
 .badge.low  { background: #fee2e2; color: var(--danger); }
+.badge.ai   { background: #ede9fe; color: #6d28d9; }
 .answer.notfound .answer-text { color: var(--warn); }
 
 .alts { margin-top: 16px; }

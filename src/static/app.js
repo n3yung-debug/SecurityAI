@@ -90,23 +90,62 @@ function renderAnswer(data) {
     return;
   }
 
-  const cls = confidenceClass(data.confidence);
   let html = `<div class="answer-text">${escapeHtml(data.answer)}</div>`;
-  html += `<div class="meta">
-             <span class="badge ${cls}">${confidenceLabel(data.confidence)}</span>
-             <span>Source: ${escapeHtml(data.source)}</span>
-           </div>`;
 
-  if (data.alternatives && data.alternatives.length) {
-    html += `<div class="alts"><h4>Other possible answers</h4>`;
-    data.alternatives.forEach((a) => {
-      html += `<div class="alt">${escapeHtml(a.answer)}
-               <div class="alt-src">${escapeHtml(a.source)}</div></div>`;
-    });
+  if (data.mode === "ai") {
+    // AI wrote the answer; show which knowledge it drew from.
+    html += `<div class="meta"><span class="badge ai">AI answer</span>`;
+    if (data.sources && data.sources.length) {
+      const seen = [];
+      data.sources.forEach((s) => {
+        if (!seen.includes(s.source)) seen.push(s.source);
+      });
+      html += `<span>Based on: ${seen.map(escapeHtml).join(" · ")}</span>`;
+    }
     html += `</div>`;
+  } else {
+    // Direct passage from search.
+    const cls = confidenceClass(data.confidence);
+    html += `<div class="meta">
+               <span class="badge ${cls}">${confidenceLabel(data.confidence)}</span>
+               <span>Source: ${escapeHtml(data.source)}</span>
+             </div>`;
+    if (data.alternatives && data.alternatives.length) {
+      html += `<div class="alts"><h4>Other possible answers</h4>`;
+      data.alternatives.forEach((a) => {
+        html += `<div class="alt">${escapeHtml(a.answer)}
+                 <div class="alt-src">${escapeHtml(a.source)}</div></div>`;
+      });
+      html += `</div>`;
+    }
   }
   box.innerHTML = html;
 }
+
+// ---- startup: permissions + AI status ------------------------------
+async function init() {
+  try {
+    const me = await api("/api/whoami");
+    const badge = document.querySelector("#aiStatus");
+    if (me.ai && me.ai.generation) {
+      badge.className = "ai-status on";
+      badge.textContent = "● Local AI: On";
+      badge.title = "Answers written by " + (me.ai.chat_model || "local model");
+    } else {
+      badge.className = "ai-status off";
+      badge.textContent = "○ Search mode";
+      badge.title = me.ai && me.ai.reachable
+        ? "Ollama is running but the model isn't installed yet"
+        : "Local AI is off — using plain search";
+    }
+    if (me.is_host) {
+      document.querySelector("#manageTab").classList.remove("hidden");
+    }
+  } catch (e) {
+    /* status is best-effort; ignore */
+  }
+}
+init();
 
 $("#askBtn").addEventListener("click", ask);
 $("#question").addEventListener("keydown", (e) => {
