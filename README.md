@@ -66,13 +66,13 @@ the host.
 
 ## Downloading the program
 
-The Windows program is built automatically:
-
-- **Latest build:** repository **Actions** tab → newest *Build Windows App* run
-  → download the **OperationsAssistant-windows** artifact → unzip to get
-  `OperationsAssistant.exe`.
-- **Released versions:** pushing a version tag (e.g. `v1.0.0`) also publishes
-  the `.exe` under **Releases**.
+- **Easiest — from the repo's main page:** look at the **Releases** panel on
+  the right-hand side of the repository home page, click the latest release, and
+  download **`OperationsAssistant.exe`** under *Assets*. (Releases are published
+  automatically whenever a version tag like `v1.0.0` is pushed.)
+- **Newest build (in between releases):** repository **Actions** tab → newest
+  *Build Windows App* run → download the **OperationsAssistant-windows**
+  artifact → unzip to get `OperationsAssistant.exe`.
 
 (First run, Windows SmartScreen may warn about an "unknown publisher" because
 the app isn't code-signed. Click **More info → Run anyway**.)
